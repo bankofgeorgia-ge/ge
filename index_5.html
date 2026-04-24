@@ -1,0 +1,391 @@
+<!DOCTYPE html><html lang="en" data-scrapbook-source="https://account.bog.ge/ssosdk/tpl/frame.html?channel=BOG&amp;v.2.2"><head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSO SDK</title>
+</head>
+
+<body>
+<script>
+    (function () {
+        const DB_NAME = "deviceManagement";
+        const DB_STORE = "keyManagement";
+        const DB_STORE_INDEX = 'browserCert';
+        const DB_PATH = window.location.pathname
+            .split('/')
+            .slice(0, -1)
+            .join('/');
+
+        function str2ab(str) {
+            const buf = new ArrayBuffer(str.length);
+            const bufView = new Uint8Array(buf);
+            for (let i = 0; i < str.length; i++) {
+                bufView[i] = str.charCodeAt(i);
+            }
+            return buf;
+        }
+
+        function ab2str(buf) {
+            return String.fromCharCode.apply(null, new Uint8Array(buf));
+        }
+
+        function pubKeyToPEM(key) {
+            return `-----BEGIN PUBLIC KEY-----\n${window.btoa(ab2str(key))}\n-----END PUBLIC KEY-----`;
+        }
+
+        function getCookie(a) {
+            const b = document.cookie.match('(^|;)\\s*' + a + '\\s*=\\s*([^;]+)');
+            return b ? b.pop() : null;
+        }
+
+        function setCookie(name, value, days) {
+            let expires = "";
+            if (days) {
+                const date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000)); // Convert days to milliseconds
+                expires = "; expires=" + date.toUTCString();
+            }
+            document.cookie = name + "=" + (value || "") + expires + "; path=" + DB_PATH + "; SameSite=Lax; Secure";
+        }
+
+        function hasCookie(name) {
+            const nameEQ = name + "="; // Create the search string
+            return document.cookie.indexOf(nameEQ) !== -1; // Check if the cookie exists
+        }
+
+        function storeManagement(callback, useCookie = false) {
+
+            /* NEW version of storage */
+            const storage = {
+                put: (data) => {
+                    setCookie(DB_STORE_INDEX, btoa(JSON.stringify(data)), 365);
+                },
+                get: () => {
+                    /* Created for compatibility */
+                    return new Proxy({}, {
+                        set: (target, prop, value) => target[prop] = value, // set handlers
+                        get(target, prop) { // handle get operations
+                            // imitation of async operation
+                            new Promise((resolve, reject) => {
+                                try {
+                                    let result = target[prop];
+                                    if (prop === 'result') {
+                                        const certs = JSON.parse(atob(getCookie(DB_STORE_INDEX)));
+                                        result = {
+                                            privateExportedKey: JSON.parse(atob(certs.pr)),
+                                            publicExportedKey: str2ab(atob(certs.pb)),
+                                        };
+                                    }
+                                    resolve({target: {result}});
+                                } catch (ex) {
+                                    reject(ex);
+                                }
+                            })
+                                .then((result) => target.onsuccess && target.onsuccess(result))
+                                .catch((error) => target.onerror && target.onerror(error));
+                        },
+                    });
+                },
+            };
+            if (useCookie || hasCookie(DB_STORE_INDEX)) {
+                return callback(storage);
+            }
+
+            /* Try to get old version of storage */
+
+            new Promise(async (resolve) => {
+                const indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB || window.shimIndexedDB;
+                const dbExists = await checkDatabaseExists(indexedDB);
+
+                if (!dbExists) {
+                    return resolve(storage);
+                }
+
+                const open = indexedDB.open(DB_NAME, 1);
+
+                open.onerror = (event) => {
+                    console.warn("Error opening database:", event.target.error);
+                    resolve(storage);
+                };
+
+                open.onsuccess = (event) => {
+                    try {
+                        const db = event.target.result;
+                        const tx = db.transaction(DB_STORE, "readwrite");
+                        const store = tx.objectStore(DB_STORE);
+
+                        tx.oncomplete = () => db.close();
+                        resolve(store);
+                    } catch (ex) {
+                        console.error("Error opening storage:", ex.message);
+                        resolve(storage);
+                    }
+                };
+            })
+                .then((store) => callback(store));
+        }
+
+        async function signData(data, privateKey) {
+            const digest = (new TextEncoder('UTF-8')).encode(data);
+            return await window.crypto.subtle.sign({
+                name: "ECDSA",
+                hash: {name: "SHA-256"},
+            }, privateKey, digest);
+        }
+
+        async function saveKeyPair(store, keypair) {
+            const [privateExportedKey, publicExportedKey] = await Promise.all([
+                window.crypto.subtle.exportKey('jwk', keypair.privateKey),
+                window.crypto.subtle.exportKey('spki', keypair.publicKey),
+            ]);
+
+            store.put({
+                pr: btoa(JSON.stringify(privateExportedKey)),
+                pb: btoa(ab2str(publicExportedKey)),
+            });
+
+            return publicExportedKey;
+        }
+
+        async function generateKeyPairAndSave() {
+            try {
+                const algorithm = {
+                    name: "ECDSA",
+                    namedCurve: "P-256",
+                };
+                const keypair = await window.crypto.subtle.generateKey(algorithm, true, ["sign"]);
+
+                return new Promise((resolve, reject) => {
+                    storeManagement(async (store) => {
+                        try {
+                            const publicExportedKey = await saveKeyPair(store, keypair);
+                            resolve(publicExportedKey);
+                        } catch (ex) {
+                            reject();
+                        }
+                    }, true);
+                });
+            } catch (ex) {
+                console.error(ex);
+                return '';
+            }
+        }
+
+        function signatureToBase64(buffer) {
+            return btoa(String.fromCharCode.apply(null, new Uint8Array(buffer)));
+        }
+
+        function buf2hex(buf) {
+            return Array.prototype.map.call(new Uint8Array(buf), x => (('00' + x.toString(16)).slice(-2))).join('');
+        }
+
+        function formatSignature(signature) {
+            const signHex = buf2hex(signature);
+            let r = signHex.substring(0, 64),
+                s = signHex.substring(64),
+                rPre = true,
+                sPre = true;
+
+            while (r.indexOf('00') === 0) {
+                r = r.substring(2);
+                rPre = false;
+            }
+
+            if (rPre && parseInt(r.substring(0, 2), 16) > 127) {
+                r = '00' + r;
+            }
+
+            while (s.indexOf('00') === 0) {
+                s = s.substring(2);
+                sPre = false;
+            }
+
+            if (sPre && parseInt(s.substring(0, 2), 16) > 127) {
+                s = '00' + s;
+            }
+            const length = (hx) => ('00' + (hx.length / 2).toString(16)).slice(-2).toString();
+
+            const payload = '02' + length(r) + r + '02' + length(s) + s;
+            return '30' + length(payload) + payload;
+        }
+
+        async function getStoreData() {
+            return new Promise((resolve, reject) => {
+                storeManagement((store) => {
+                    const data = store.get(DB_STORE_INDEX);
+                    if (!(data instanceof IDBRequest)) {
+                        data.result; // Trigger proxy get or if it's not a proxy
+                    }
+                    data.onsuccess = (event) => resolve(event.target.result);
+                    data.onerror = reject;
+                });
+            });
+        }
+
+        async function signUserInput(input) {
+            try {
+                const data = await getStoreData();
+
+                if (!data || (!data.privateKey && !data.privateExportedKey)) {
+                    throw new Error('Private key not found');
+                }
+
+                /* Allow compatibility for older version and generate */
+                let {privateKey, privateExportedKey} = data;
+                if (privateExportedKey && !privateKey) {
+                    privateKey = await window.crypto.subtle.importKey('jwk', privateExportedKey, {
+                            name: "ECDSA",
+                            namedCurve: "P-256",
+                        },
+                        true,
+                        ["sign"]);
+                }
+                const signature = await signData(input, privateKey);
+                return formatSignature(signature);
+            } catch (e) {
+                throw new Error('Signing failed');
+            }
+        }
+
+        async function getPublicKey() {
+            try {
+                const data = await getStoreData();
+
+                if (!data || (!data.publicKey && !data.publicExportedKey)) {
+                    throw new Error('No public key found');
+                }
+
+                let {publicKey, publicExportedKey} = data;
+                if (!publicExportedKey && publicKey) {
+                    publicExportedKey = await window.crypto.subtle.exportKey('spki', publicKey);
+                }
+
+                return pubKeyToPEM(publicExportedKey);
+            } catch (e) {
+                const publicExportedKey = await generateKeyPairAndSave();
+                if (publicExportedKey) {
+                    return pubKeyToPEM(publicExportedKey);
+                } else {
+                    throw new Error('Public key generation error');
+                }
+            }
+        }
+
+        async function checkKeyPairExistence() {
+            try {
+                const data = await getStoreData();
+                return !!(data && (data.publicKey || data.publicExportedKey));
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function checkDatabaseExists(indexedDB) {
+            return new Promise(async (resolve) => {
+                // Check if `databases()` is available (for modern browsers)
+                if ('databases' in indexedDB) {
+                    try {
+                        const databases = await indexedDB.databases();
+                        const exists = databases.some(db => db.name === DB_NAME);
+                        resolve(exists);
+                    } catch (error) {
+                        console.error('Error fetching databases:', error);
+                        resolve(false);
+                    }
+                } else {
+                    // Fallback for older browsers like Firefox < 108 or Safari < 14
+                    const request = indexedDB.open(DB_NAME, 1);
+
+                    request.onsuccess = (event) => {
+                        const db = event.target.result;
+                        const exists = db.objectStoreNames.contains(DB_STORE);
+                        db.close();  // Explicitly close the connection
+                        resolve(exists);
+                    };
+
+                    request.onerror = () => {
+                        // If the database doesn't exist or there is an error
+                        resolve(false);
+                    };
+                }
+            });
+        }
+
+        window.onmessage = async function (e) {
+            const data = JSON.parse(e.data);
+            const event = data.event;
+            const identifier = data.identifier;
+            delete data.event;
+            switch (event) {
+                case 'cookies':
+                    window.parent.postMessage({
+                        identifier: identifier,
+                        isSsoIframe: true,
+                        cookies: document.cookie,
+                    }, '*');
+                    break;
+                case 'signature':
+                    signUserInput(data.data).then(function (signature) {
+                        window.parent.postMessage({
+                            identifier: identifier,
+                            isSsoIframe: true,
+                            signature: signature,
+                        }, '*');
+                    }).catch(function () {
+                        window.parent.postMessage({
+                            identifier: identifier,
+                            isError: true,
+                            isSsoIframe: true,
+                        }, '*');
+                    });
+                    break;
+                case 'storage':
+                    let isError = false;
+                    if (data.hasOwnProperty('value')) {
+                        isError = typeof data.value !== 'string';
+                        if (isError === false) {
+                            localStorage.setItem(data.key, data.value);
+                        }
+                    }
+                    window.parent.postMessage({
+                        identifier: identifier,
+                        isError: isError,
+                        isSsoIframe: true,
+                        value: localStorage.getItem(data.key),
+                    }, '*');
+                    break;
+                case 'initialize':
+                    if (data.extCustomerId && localStorage.getItem('extCustomerId') === null) {
+                        localStorage.setItem('extCustomerId', data.extCustomerId);
+                    }
+                    /* Do more something */
+                    window.parent.postMessage({
+                        identifier: identifier,
+                        isError: false,
+                        isSsoIframe: true,
+                    }, '*');
+                    break;
+                case 'get-public-key':
+                    window.parent.postMessage({
+                        identifier: identifier,
+                        isError: false,
+                        isSsoIframe: true,
+                        publicKey: await getPublicKey(),
+                    }, '*');
+                    break;
+                case 'check-key-existence':
+                    window.parent.postMessage({
+                        identifier: identifier,
+                        isError: false,
+                        isSsoIframe: true,
+                        exists: await checkKeyPairExistence(),
+                    }, '*');
+                    break;
+            }
+        };
+    })();
+</script>
+
+
+
+</body></html>

@@ -1,0 +1,164 @@
+body.business {
+    /* --menu-color: #5a6670; */
+    --header-bottom-level-bg-color: var(--header-row-02);
+    --scroll-color: var(--color-orange);
+}
+body {
+    /* --menu-color: var(--color-orange); */
+    --header-bottom-level-bg-color: var(--color-support-solid-first);
+    --scroll-color: var(--color-orange-third);
+    background-color: var(--color-invert-background-solid-10);
+    overflow-anchor: none;
+    overflow: unset !important;
+    /* overflow: hidden; */
+    --size-28: 28px;
+    --size-36: 36px;
+}
+
+body.hiddenScroll::-webkit-scrollbar {
+    display: none;
+}
+
+@keyframes fadeIn {
+    0% {
+        opacity: 0;
+    }
+    50% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+.smcx-widget::before {
+    content: '';
+    position: absolute;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0,0,0,0.5);
+    left: calc(-50vw + 50%);
+    top: calc(-50vh + 50%);
+    z-index: -1;
+}
+.smcx-widget {
+    animation: fadeIn 1s ease-in-out !important;
+    background: #333E48 !important;
+    font-family: MarkGEO !important;
+    font-size: 16px !important;
+}
+.smcx-modal-h1 {
+    font-family: MarkGEOCaps !important;
+    font-weight: bold !important;
+    font-size: 24px !important;
+}
+.smcx-modal-p {
+    font-family: MarkGEO !important;
+    font-size: 16px !important;
+    line-height: 20px !important;
+}
+.smcx-btn {
+    font-family: MarkGEOCaps !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    float: none !important;
+}
+.smcx-modal-actions {
+    display: flex !important;
+    justify-content: center !important;
+}
+.smcx-btn-primary {
+    margin-left: 16px !important;
+}
+.smcx-modal-actions>.smcx-btn-secondary {
+    color: #333 !important;
+}
+
+bd-modal[sticky] {
+    --modal-height-size: 95vh;
+}
+
+bd-modal[sticky][size='small'] {
+    --modal-height-size: fit-content;
+    max-height: 95vh;
+}
+
+#kampyleButtonContainer .kampyle_vertical_button .kampyle_button-text {
+    font-family: "BOG Headline";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 38px;
+}
+
+#seo-text-field {
+    display: flex;
+    padding: 0px var(--section-space);
+}
+
+@media (max-width: 768px) {
+    bd-modal {
+        --modal-width-size: 712px;
+    }
+
+    bd-modal:not([sticky]) {
+        --modal-width-size: 85vw;
+    }
+}
+
+@media (max-width: 712px) {
+    bd-modal {
+        --modal-width-size: 100%;
+    }
+}
+
+@media (max-width: 600px) {
+    bd-modal[sticky] {
+        --modal-height-size: 85vh;
+    }
+
+    bd-modal[sticky][size='small'] {
+        --modal-height-size: fit-content;
+        max-height: 85vh;
+    }
+
+    bd-modal:not([sticky]) {
+        --modal-width-size: 100%;
+    }
+}
+
+
+@media (max-width: 320px) {
+    .smcx-modal-content {
+        height: 280px !important;
+    }
+}
+.smcx-modal-close {
+    display: none !important;
+}
+.grecaptcha-badge {
+    visibility: hidden;
+}
+
+
+/* search modal */
+
+bd-modal[search] {
+    max-height: 80vh;
+    --modal-width-size: 640px;
+    width: 640px;
+    max-width: 640px;
+    top: 96px;
+    bottom: initial;
+}
+
+@media (max-width: 600px) {
+    bd-modal[search] {
+        height: auto;
+        max-height: 100vh;
+        top: 0;
+        border-radius: 0;
+        width: 100%;
+        max-width: 100%;
+    }
+}

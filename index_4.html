@@ -1,0 +1,61 @@
+<!DOCTYPE html><html lang="en" data-scrapbook-source="https://account.bog.ge/ssosdk/worker.html?channel=BOG&amp;v.2.2"><head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title></title>
+</head>
+<body>
+<script>
+    (function () {
+        let notificationSent = false;
+
+        // Function to handle state changes of a service worker
+        function handleStateChange(serviceWorker) {
+            if (!serviceWorker) return;
+
+            function onStateChange() {
+                console.log('[WR] Service worker state changed:', serviceWorker.state);
+                if (serviceWorker.state === 'activated') {
+                    serviceWorker.removeEventListener('statechange', onStateChange);
+                    notify(true);
+                }
+            };
+            serviceWorker.addEventListener('statechange', onStateChange);
+        }
+
+        // Function to notify frame
+        function notify() {
+            if (notificationSent) {
+                return;
+            }
+            notificationSent = true;
+            window.parent.postMessage({
+                isSsoIframe: true,
+                isWorker: true,
+            }, '*');
+            console.log('[WR] Notification Sent');
+        }
+
+        if (!("serviceWorker" in navigator)) {
+            return notify();
+        }
+
+        navigator.serviceWorker.register("./worker.js", {
+            scope: "/ssosdk/",
+        })
+            .then(function (registration) {
+                // Register Fallback
+                setTimeout(notify, 5000);
+
+                // Try handle SW processing
+                const worker = registration.installing || registration.waiting || registration.active;
+                if (worker) {
+                    console.log('[WR] Registration:', worker.state);
+                    worker.state === 'activated' ? notify() : handleStateChange(worker);
+                }
+            })
+            .catch(notify);
+    })();
+</script>
+
+</body></html>
